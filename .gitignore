@@ -1,0 +1,11 @@
+.env
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+models/*.joblib
+!models/.gitkeep
+__pycache__/
+*.pyc
+.pytest_cache/
+.python-version
