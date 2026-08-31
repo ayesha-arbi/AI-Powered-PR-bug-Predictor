@@ -1,145 +1,549 @@
-# AI-Powered Pre-Merge Bug Risk Predictor
+# AI-Powered Pre-Merge PR Bug-Risk Predictor
 
-Predicts whether a **merged** GitHub pull request is **associated with a subsequent bug-fix signal** within 30 days (a later commit touching files from that PR, with a bug-fix/revert keyword in the commit subject).
+A **multi-agent** machine-learning system that estimates whether a **merged GitHub pull request (PR)** will be associated with a subsequent bug-fix signal within 30 days.
 
-This is **not** a causal model. It does **not** claim that a PR “causes” a bug.
+The system combines GitHub repository history, pull-request characteristics, a Gradient Boosting classifier, and an optional Groq LLM explanation layer through a coordinated multi-agent architecture.
 
-**Experimental results on real GitHub data: not yet run.** The pipeline has local/synthetic tests only until you collect and train on real pull requests.
+> **Important:** This is not a causal bug predictor. A positive label means that a later bug-fix-associated commit touched files from the original PR within the observation window. It does not prove that the original PR caused a bug.
 
-## Architecture
+## What It Does
 
+```text
+GitHub Pull Request
+        ↓
+Data Agent: PR + Files + Commits
+        ↓
+Data Agent: Feature Extraction + Labeling
+        ↓
+ML Agent: Gradient Boosting Classifier
+        ↓
+ML Agent: Risk Probability
+        ↓
+Orchestrator: Risk Band Assignment (Low/Medium/High)
+        ↓
+LLM Agent: Optional Explanation
+        ↓
+LLM Agent: Contrarian Analysis (Borderline Scores Only)
 ```
-GitHub PR data
-    → Data Agent (features + 30-day label)
-    → Gradient Boosting classifier (scikit-learn)
-    → Risk score (probability)
-    → Groq LLM explanation (llama-3.3-70b-versatile)
-    → Optional contrarian pass if 0.4 ≤ score ≤ 0.6
-    → Structured JSON report
+
+The ML model produces the numerical risk score.
+
+The LLM only explains the result using supplied evidence. It does **not** modify the ML score.
+
+## Multi-Agent Architecture
+
+The system implements a multi-agent pattern with specialized components that coordinate through an orchestrator:
+
+```text
+┌─────────────────────────────────────────────────────────────┐
+│                    Orchestrator Agent                        │
+│              (Pipeline coordination & flow control)           │
+└─────────────────────────────────────────────────────────────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        │                   │                   │
+        ▼                   ▼                   ▼
+┌───────────────┐  ┌───────────────┐  ┌───────────────┐
+│  Data Agent   │  │   ML Agent    │  │   LLM Agent   │
+│               │  │               │  │               │
+│ • GitHub API  │  │ • Model train│  │ • Explanation │
+│ • Feature ext │  │ • Prediction  │  │ • Contrarian  │
+│ • Labeling    │  │ • Evaluation │  │ • Synthesis   │
+└───────────────┘  └───────────────┘  └───────────────┘
 ```
 
-Local-only: no database, no web app, no deployment.
+**Agent Responsibilities:**
 
-## Target / label
+- **Data Agent** (`data_agent.py`): Fetches GitHub PR data, extracts features, computes bug-fix association labels, manages dataset collection and validation
+- **ML Agent** (`ml_agent.py`): Trains Gradient Boosting classifier, handles model persistence, performs risk prediction with feature importance analysis
+- **LLM Agent** (`llm_agent.py`): Generates grounded explanations using Groq API, performs contrarian analysis for borderline cases, synthesizes counterarguments
+- **Orchestrator** (`orchestrator.py`): Coordinates agent interactions, manages pipeline flow, handles error cases and fallbacks
 
-`label = 1` if, after merge and within `LOOKAHEAD_DAYS` (30), a commit that:
+This multi-agent design enables modularity, testability, and clear separation of concerns between data processing, machine learning, and natural language generation components.
 
-1. touches a file changed by the PR (up to 10 files; documentation paths skipped when any non-doc file exists), and
-2. is **not** one of the original PR commits or the merge commit, and
-3. has a **subject line** matching whole-word keywords: `fix`, `bug`, `hotfix`, `patch`, `revert` (and common inflections),
+## Dataset
 
-is observed.
+The current dataset contains **547 merged pull requests** from four open-source repositories:
 
-`label = 0` if the full 30-day window elapsed and no such commit was found.
+| Repository |     PRs |   Positive |
+| ---------- | ------: | ---------: |
+| Django     |     100 |      38.0% |
+| Kubernetes |     150 |      29.3% |
+| NumPy      |     150 |      38.0% |
+| Flask      |     147 |      11.6% |
+| **Total**  | **547** | **28.52%** |
 
-**Right-censoring:** PRs whose merge time is fewer than 30 days ago are **skipped during collection** (`REQUIRE_COMPLETE_LOOKAHEAD = True`). They are not stored as negatives. Keeping only early positives from an incomplete window would bias the sample toward quickly observed events, so those rows are skipped too. Use `--include-incomplete-lookahead` only for inspection, not training.
+Overall labels:
 
-GitHub issue trackers and PR labels are **not** the training target. PR labels are stored as metadata (`pr_labels`) for later inspection only.
+```text
+Negative: 391
+Positive: 156
+Positive rate: 28.52%
+```
+
+All training examples have a complete 30-day lookahead window.
+
+## Label Definition
+
+A PR receives label `1` when a later commit within 30 days:
+
+1. matches the project's bug-fix commit-subject pattern, and
+2. touches at least one file associated with the original PR.
+
+Otherwise it receives label `0`.
+
+The PR's own commits and merge-related commits are excluded from the lookahead.
+
+This is an **association signal**, not a ground-truth software defect label.
+
+The labeling search is capped at **10 files per PR**, with documentation paths deprioritized. Historical churn and prior bug-fix lookups are capped at **5 files**.
+
+PRs whose full 30-day observation window has not elapsed are excluded rather than treated as negative examples.
 
 ## Features
 
-All features are computed from information at or before merge time. Historical commit queries **exclude this PR’s own SHAs**.
+The classifier uses 14 features:
 
-| Feature | Meaning |
-| --- | --- |
-| `additions` / `deletions` / `lines_changed` | Line stats from the PR files API |
-| `files_changed` | Number of files in the PR (paginated) |
-| `test_file_present` / `n_test_files` | Test path heuristics (`tests/`, `test_*.py`, etc.) |
-| `source_file_touched` | Non-doc, non-test source extension |
-| `config_file_touched` / `dependency_file_touched` | Config / lockfile heuristics |
-| `n_directories` | Distinct parent directories |
-| `file_churn_count` | Unique historical commits in the previous ~3 months on up to 5 files (source preferred). A **lower bound** if `file_churn_truncated=1` |
-| `file_prior_bugfix_touch` | Any of those historical commits has a bug-fix subject |
-| `day_of_week` / `hour_of_day` | Merge time in UTC |
+```text
+additions
+deletions
+files_changed
+lines_changed
+test_file_present
+n_test_files
+source_file_touched
+config_file_touched
+dependency_file_touched
+n_directories
+file_churn_count
+file_prior_bugfix_touch
+day_of_week
+hour_of_day
+```
 
-Author identity is stored but **not** used as a model feature.
+The strongest global Gradient Boosting feature importances are:
 
-## ML methodology
+| Feature                 | Importance |
+| ----------------------- | ---------: |
+| file_prior_bugfix_touch |     20.19% |
+| file_churn_count        |     18.03% |
+| additions               |     14.13% |
+| hour_of_day             |     10.50% |
+| lines_changed           |      8.57% |
 
-- Primary model: `sklearn.ensemble.GradientBoostingClassifier`
-- Optional baseline model: `LogisticRegression(class_weight="balanced")`
-- **Primary evaluation: temporal split** (sort by `merged_at`, train on older PRs, test on newer PRs)
-- Random stratified split is computed only as a **secondary** comparison (it can leak time)
-- Also reported: majority-class baseline, F1, precision, recall, confusion matrix, class counts; ROC-AUC / PR-AUC when both classes appear in the test fold
-- Tiny datasets can be **technically trainable** and still **not scientifically meaningful**; the trainer warns when folds are small or missing a class
-- Feature importances from gradient boosting are **model-wide impurity importances**, not instance-level and not causal
+These are **model-wide feature importances**, not causal explanations for an individual PR.
 
-## LLM explanation
+## Machine Learning Model
 
-Groq generates a short explanation from the **evidence block** (score and feature values). If the API key is missing or Groq fails, the ML score is still returned (`llm_status: unavailable`).
+The **ML Agent** manages model training, evaluation, and prediction:
 
-The contrarian pass runs only for borderline probabilities `[0.4, 0.6]`. Its `llm_synthesis` does **not** replace `risk_score` or `risk_label`.
+Primary model:
 
-## Setup
+```text
+GradientBoostingClassifier(random_state=42)
+```
 
-Python 3.14 (project default). Do not commit `.env`.
+The main training path uses training-set-derived sample weights to compensate for class imbalance.
 
-```bash
+A Logistic Regression model was also tested:
+
+```text
+LogisticRegression(
+    class_weight="balanced",
+    max_iter=1000
+)
+```
+
+The reproduced temporal F1 for Logistic Regression was **0.595**, compared with **0.620** for Gradient Boosting. The Logistic Regression run also produced a convergence warning.
+
+## Evaluation
+
+The primary evaluation is a **temporal split**.
+
+```text
+Training: 410 PRs
+Test:     137 PRs
+
+Test negatives: 97
+Test positives: 40
+```
+
+### Temporal Results
+
+| Metric    |    Result |
+| --------- | --------: |
+| F1        | **0.620** |
+| Precision | **0.517** |
+| Recall    | **0.775** |
+| Accuracy  | **0.723** |
+| ROC-AUC   | **0.777** |
+| PR-AUC    | **0.566** |
+
+Confusion matrix:
+
+```text
+[[68, 29],
+ [ 9, 31]]
+```
+
+The majority-class baseline has positive-class F1 = `0.0`.
+
+### Random Split
+
+The random split is included only as a secondary comparison because random splitting can introduce temporal leakage.
+
+| Metric    | Result |
+| --------- | -----: |
+| F1        |  0.505 |
+| Precision |  0.429 |
+| Recall    |  0.615 |
+| ROC-AUC   |  0.727 |
+| PR-AUC    |  0.593 |
+
+### Leave-One-Repository-Out
+
+LORO evaluation tests cross-repository generalization by holding out one repository at a time.
+
+| Held-out Repository |        F1 |
+| ------------------- | --------: |
+| Django              |     0.357 |
+| Kubernetes          |     0.466 |
+| NumPy               |     0.325 |
+| Flask               |     0.111 |
+| **Mean**            | **0.315** |
+
+Overall LORO results:
+
+```text
+Mean F1        0.315
+Mean Precision 0.400
+Mean Recall    0.306
+Mean Accuracy  0.662
+Mean ROC-AUC   0.624
+Mean PR-AUC    0.391
+```
+
+The large drop from temporal performance to LORO performance indicates **limited cross-repository generalization**.
+
+The LORO implementation currently does not use the same class-balanced sample weighting as the primary training path. This is an important methodological limitation.
+
+## Risk Bands
+
+The system uses separate qualitative risk bands:
+
+```text
+score < 0.4       → low
+0.4 ≤ score ≤ 0.6 → medium
+score > 0.6      → high
+```
+
+The binary ML evaluation threshold is `0.45`.
+
+The `0.45` threshold is currently configured in the implementation. A formal threshold-sweep artifact is not stored in the repository, so the project does not claim that the repository contains a reproducible sweep selecting `0.45`.
+
+## LLM Explanation
+
+The optional explanation layer is handled by the **LLM Agent** and uses:
+
+```text
+Provider: Groq
+Model: openai/gpt-oss-120b
+```
+
+The LLM Agent receives evidence such as:
+
+* ML risk score
+* PR size
+* files changed
+* test-file information
+* source/config/dependency changes
+* historical file churn
+* prior bug-fix touches
+* temporal information
+* model-wide feature importance
+
+The prompt instructs the LLM to use only the supplied evidence and avoid causal claims.
+
+The multi-agent architecture provides graceful degradation: if Groq is unavailable, the Orchestrator still returns the ML prediction with appropriate status flags.
+
+## Contrarian Pass
+
+For borderline predictions:
+
+```text
+0.4 ≤ score ≤ 0.6
+```
+
+the system performs an additional LLM pass.
+
+The workflow is:
+
+```text
+Initial explanation
+       ↓
+Counterargument
+       ↓
+Qualitative synthesis
+```
+
+The contrarian stage is commentary only.
+
+It **cannot change the numerical ML score**.
+
+## Example Predictions
+
+### Low Risk
+
+```text
+Repository: pallets/flask
+PR: #6013
+
+Risk score: 0.3861
+Risk label: low
+```
+
+Multi-agent pipeline: Data Agent → ML Agent → LLM Agent
+LLM explanation was successfully generated.
+Contrarian pass was not triggered (score outside borderline range).
+
+### Medium Risk
+
+```text
+Repository: numpy/numpy
+PR: #31907
+
+Risk score: 0.4363
+Risk label: medium
+```
+
+Multi-agent pipeline: Data Agent → ML Agent → LLM Agent → Contrarian Pass
+The explanation, counterargument, and synthesis stages successfully executed.
+Demonstrates full multi-agent coordination for borderline cases.
+
+### High Risk
+
+```text
+Repository: numpy/numpy
+PR: #31856
+
+Risk score: 0.9131
+Risk label: high
+```
+
+Multi-agent pipeline: Data Agent → ML Agent → LLM Agent
+LLM explanation was successfully generated.
+Contrarian pass was not triggered (score outside borderline range).
+
+## Testing
+
+The project currently contains automated tests for:
+
+```text
+Censoring
+Data processing
+Feature/score behavior
+GitHub client
+Labeling
+LLM agent behavior
+ML agent behavior
+Multi-agent pipeline coordination
+```
+
+Latest test run:
+
+```text
+37 passed
+18 warnings
+```
+
+The warnings were NumPy/joblib deprecation warnings and were not test failures.
+
+Tests verify individual agent behavior as well as multi-agent orchestration through the pipeline.
+
+## Project Structure
+
+```text
+.
+├── run.py
+├── README.md
+├── requirements.txt
+├── .env.example
+├── .gitignore
+│
+├── src/
+│   ├── config.py
+│   ├── data_agent.py           # GitHub fetch + feature extraction + labeling
+│   ├── dataset_validation.py   # Data quality checks
+│   ├── github_client.py        # REST API client with retry/rate-limit handling
+│   ├── labeling.py             # Bug-fix commit pattern matching
+│   ├── llm_agent.py            # Groq explanation + contrarian analysis
+│   ├── ml_agent.py             # Model training + prediction + evaluation
+│   ├── orchestrator.py         # Multi-agent coordination
+│   └── synthetic.py            # Synthetic data generation for testing
+│
+├── scripts/
+│   └── loro_eval.py            # Leave-one-repository-out evaluation
+│
+└── tests/
+    ├── test_censoring.py
+    ├── test_data_and_scores.py
+    ├── test_github_client.py
+    ├── test_labeling.py
+    ├── test_llm_and_pipeline.py
+    └── test_ml_agent.py
+```
+
+Generated datasets, models, and evaluation artifacts are kept outside the tracked source files.
+
+## Installation
+
+Create and activate a virtual environment:
+
+```powershell
 python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-copy .env.example .env
+.venv\Scripts\Activate.ps1
 ```
 
-Set `GITHUB_TOKEN` and `GROQ_API_KEY` in `.env` (never commit that file).
+Install dependencies:
 
-## Commands
-
-Score a merged PR (requires a **GitHub-trained** `models/risk_classifier.joblib`; a synthetic bundle is refused unless `--allow-synthetic-model`):
-
-```bash
-python run.py --repo pallets/flask --pr 123
-python run.py --repo pallets/flask --pr 123 --no-llm
+```powershell
+python -m pip install -r requirements.txt
 ```
 
-Collect a **small** dataset. Collection scans recently **created** closed PRs and keeps merged ones; it is **not** “the latest N merges”. Recent PRs with an incomplete 30-day window are skipped by default:
+Configure environment variables using `.env.example`.
 
-```bash
-python run.py --collect --repo pallets/flask --limit 25
+A GitHub credential/configuration is required for live PR retrieval.
+
+A Groq API key is required for LLM explanations.
+
+## Train the Model
+
+Train on the processed GitHub dataset:
+
+```powershell
+python run.py --train --csv data/processed/all_repos.csv --model-type gboost
 ```
 
-Train (temporal evaluation is the printed primary result). Training **fails** if the CSV still contains incomplete-lookahead rows (including the first 25-PR Flask file if it was collected before censoring):
+The trained model is written locally to:
 
-```bash
-python run.py --train
+```text
+models/risk_classifier.joblib
 ```
 
-Local synthetic training (writes `models/synthetic_risk_classifier.joblib` by default; **not** a real-data result):
+The saved bundle records:
 
-```bash
-python run.py --train-synthetic
+```text
+model
+feature_cols
+model_type
+trained_on
 ```
 
-Tests (no live GitHub/Groq):
+Real GitHub PR scoring refuses synthetic-trained models unless explicitly allowed.
 
-```bash
-python -m unittest discover -s tests -v
+## Score a Real PR
+
+ML prediction only:
+
+```powershell
+python run.py --repo numpy/numpy --pr 31856 --no-llm
 ```
 
-## Limitations
+ML + LLM explanation:
 
-- Keyword labels are a **noisy proxy** (style of commit messages, “fix typo”, incomplete follow-ups, unfixed bugs).
-- A later commit on the same file is **association**, not proof the PR introduced the defect.
-- Only files queried (capped) can produce a positive label; large PRs are under-sampled for labeling and churn.
-- GitHub list-pulls cannot sort by `merged_at`; collection scans recently **created** closed PRs, then keeps merged ones.
-- Commit windows use GitHub’s commits API (`since` / `until` / `path`) with pagination caps; truncated listings are flagged and are not silently treated as complete zeros.
-- The existing 25-row Flask CSV includes PRs merged in August 2026 labeled 0 without a full 30-day window. **Do not train on that file as-is.** Re-collect with default censoring.
-- Synthetic training is for pipeline tests only.
-- No real-data performance claim until you collect a complete-lookahead dataset and run `--train`.
-- Author identity is **not** in the current model.
-
-## Example output shape
-
-```json
-{
-  "repo": "pallets/flask",
-  "pr_number": 123,
-  "risk_score": 0.51,
-  "risk_label": "medium",
-  "explanation": null,
-  "llm_status": "skipped",
-  "contrarian": null
-}
+```powershell
+python run.py --repo numpy/numpy --pr 31856
 ```
 
-Numeric values above are illustrative of **shape**, not a measured experiment.
+The output contains:
+
+```text
+risk_score
+risk_label
+feature_values
+top_features
+model_wide_importances
+trained_on
+explanation
+```
+
+## Run LORO Evaluation
+
+```powershell
+python scripts/loro_eval.py
+```
+
+## Run Tests
+
+```powershell
+python -m pytest
+```
+
+## Important Limitations
+
+This project is experimental.
+
+The target is a **subsequent bug-fix association**, not a verified software defect.
+
+The label depends on commit-subject keyword matching and file overlap, so it can contain noise.
+
+Feature searches are capped, meaning large pull requests may not have every touched file represented in some historical calculations.
+
+Repository class distributions differ substantially, especially for Flask.
+
+Temporal performance is considerably stronger than cross-repository LORO performance, showing that generalization remains a problem.
+
+The classifier probability has not been independently calibrated, so the score should not be interpreted as a guaranteed empirical probability.
+
+Model-wide feature importance is not causal and is not an instance-level explanation.
+
+The LLM is an optional interpretation layer and depends on an external API.
+
+## Research Summary
+
+The current experiment shows that pull-request size, repository history, file churn, and prior bug-fix activity contain useful signals for predicting subsequent bug-fix association.
+
+The primary temporal evaluation achieved:
+
+```text
+F1      = 0.620
+ROC-AUC = 0.777
+PR-AUC  = 0.566
+```
+
+However, the reproduced LORO evaluation achieved:
+
+```text
+Mean F1      = 0.315
+Mean ROC-AUC = 0.624
+Mean PR-AUC  = 0.391
+```
+
+The main conclusion is therefore that the approach shows promising within-dataset predictive signal, but **cross-repository generalization remains limited**.
+
+## CV Summary
+
+**Built BugPredict, a multi-agent PR risk system combining a trained gradient-boosting classifier (F1 = 0.620) with an LLM explanation agent, tested on 547 PRs from 4 public repositories.**
+
+## Status
+
+Current implementation:
+
+```text
+Dataset collection       ✅
+Dataset validation       ✅
+Feature engineering      ✅
+Multi-agent architecture ✅
+Gradient Boosting model  ✅
+Temporal evaluation      ✅
+Random evaluation        ✅
+LORO evaluation          ✅
+Real PR inference        ✅
+Risk bands               ✅
+Groq explanation         ✅
+Contrarian pass          ✅
+Automated tests          ✅
+Research documentation   🔄
+```
+
+This repository contains an experimental multi-agent software-engineering ML system and its supporting evaluation code.
