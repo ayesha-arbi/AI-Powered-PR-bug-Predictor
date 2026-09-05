@@ -1,5 +1,7 @@
 # AI-Powered Pre-Merge PR Bug-Risk Predictor
 
+[📄 Full Research Report (PDF)](AI_Bug_predictor_Reasearch.pdf)
+
 A **multi-agent** machine-learning system that estimates whether a **merged GitHub pull request (PR)** will be associated with a subsequent bug-fix signal within 30 days.
 
 The system combines GitHub repository history, pull-request characteristics, a Gradient Boosting classifier, and an optional Groq LLM explanation layer through a coordinated multi-agent architecture.
