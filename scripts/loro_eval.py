@@ -1,6 +1,8 @@
+import json
 from pathlib import Path
 
 import joblib
+import numpy as np
 import pandas as pd
 
 from sklearn.ensemble import GradientBoostingClassifier
@@ -70,8 +72,16 @@ for held_out in repos:
     X_test = test_df[FEATURE_COLS]
     y_test = test_df["label"]
 
+    counts = pd.Series(y_train).value_counts()
+    n = len(y_train)
+    sample_weight = np.ones(n, dtype=float)
+    if len(counts) > 1:
+        sample_weight = np.array(
+            [n / (len(counts) * counts[y]) for y in y_train], dtype=float
+        )
+
     model = GradientBoostingClassifier(random_state=42)
-    model.fit(X_train, y_train)
+    model.fit(X_train, y_train, sample_weight=sample_weight)
 
     y_prob = model.predict_proba(X_test)[:, 1]
     y_pred = (y_prob >= 0.45).astype(int)
@@ -121,3 +131,7 @@ print(
 print("\nMean across repositories:")
 for metric in ["f1", "precision", "recall", "roc_auc", "pr_auc", "accuracy"]:
     print(f"{metric:10}: {summary[metric].mean():.3f}")
+
+Path("results").mkdir(exist_ok=True)
+with open("results/loro_results_after.json", "w") as f:
+    json.dump(all_results, f, indent=2)
