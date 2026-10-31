@@ -11,4 +11,6 @@ models/*
 !models/.gitkeep
 
 results/*
+!results/*.json
+!results/*.txt
 models/

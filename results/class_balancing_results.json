@@ -1,0 +1,218 @@
+{
+  "no_balancing": {
+    "temporal": {
+      "f1": 0.5454545454545454,
+      "precision": 0.5,
+      "recall": 0.6,
+      "accuracy": 0.708029197080292,
+      "roc_auc": 0.7739690721649484,
+      "pr_auc": 0.5817165183591104,
+      "confusion_matrix": [
+        [
+          73,
+          24
+        ],
+        [
+          16,
+          24
+        ]
+      ],
+      "n_train": 410,
+      "n_test": 137
+    },
+    "loro": {
+      "folds": {
+        "django/django": {
+          "f1": 0.2916666666666667,
+          "precision": 0.7,
+          "recall": 0.18421052631578946,
+          "accuracy": 0.66,
+          "roc_auc": 0.6922750424448217,
+          "pr_auc": 0.5873440337891341,
+          "confusion_matrix": [
+            [
+              59,
+              3
+            ],
+            [
+              31,
+              7
+            ]
+          ],
+          "repo": "django/django"
+        },
+        "kubernetes/kubernetes": {
+          "f1": 0.4380952380952381,
+          "precision": 0.3770491803278688,
+          "recall": 0.5227272727272727,
+          "accuracy": 0.6066666666666667,
+          "roc_auc": 0.625,
+          "pr_auc": 0.3528077019208821,
+          "confusion_matrix": [
+            [
+              68,
+              38
+            ],
+            [
+              21,
+              23
+            ]
+          ],
+          "repo": "kubernetes/kubernetes"
+        },
+        "numpy/numpy": {
+          "f1": 0.3855421686746988,
+          "precision": 0.6153846153846154,
+          "recall": 0.2807017543859649,
+          "accuracy": 0.66,
+          "roc_auc": 0.7538200339558573,
+          "pr_auc": 0.5975822972444986,
+          "confusion_matrix": [
+            [
+              83,
+              10
+            ],
+            [
+              41,
+              16
+            ]
+          ],
+          "repo": "numpy/numpy"
+        },
+        "pallets/flask": {
+          "f1": 0.25806451612903225,
+          "precision": 0.2857142857142857,
+          "recall": 0.23529411764705882,
+          "accuracy": 0.8435374149659864,
+          "roc_auc": 0.6190045248868778,
+          "pr_auc": 0.16865886926990165,
+          "confusion_matrix": [
+            [
+              120,
+              10
+            ],
+            [
+              13,
+              4
+            ]
+          ],
+          "repo": "pallets/flask"
+        }
+      },
+      "mean_f1": 0.34334214739140895,
+      "mean_roc_auc": 0.6725249003218893,
+      "mean_pr_auc": 0.4265982255561041,
+      "mean_precision": 0.49453702035669245,
+      "mean_recall": 0.30573341776902146,
+      "mean_accuracy": 0.6925510204081633
+    }
+  },
+  "training_weighted": {
+    "temporal": {
+      "f1": 0.5684210526315789,
+      "precision": 0.4909090909090909,
+      "recall": 0.675,
+      "accuracy": 0.7007299270072993,
+      "roc_auc": 0.7590206185567011,
+      "pr_auc": 0.5119297405638233,
+      "confusion_matrix": [
+        [
+          69,
+          28
+        ],
+        [
+          13,
+          27
+        ]
+      ],
+      "n_train": 410,
+      "n_test": 137
+    },
+    "loro": {
+      "folds": {
+        "django/django": {
+          "f1": 0.46153846153846156,
+          "precision": 0.5555555555555556,
+          "recall": 0.39473684210526316,
+          "accuracy": 0.65,
+          "roc_auc": 0.6893039049235994,
+          "pr_auc": 0.5802960138159434,
+          "confusion_matrix": [
+            [
+              50,
+              12
+            ],
+            [
+              23,
+              15
+            ]
+          ],
+          "repo": "django/django"
+        },
+        "kubernetes/kubernetes": {
+          "f1": 0.43902439024390244,
+          "precision": 0.34177215189873417,
+          "recall": 0.6136363636363636,
+          "accuracy": 0.54,
+          "roc_auc": 0.5746140651801029,
+          "pr_auc": 0.33495850374816594,
+          "confusion_matrix": [
+            [
+              54,
+              52
+            ],
+            [
+              17,
+              27
+            ]
+          ],
+          "repo": "kubernetes/kubernetes"
+        },
+        "numpy/numpy": {
+          "f1": 0.6260869565217392,
+          "precision": 0.6206896551724138,
+          "recall": 0.631578947368421,
+          "accuracy": 0.7133333333333334,
+          "roc_auc": 0.7508017355215997,
+          "pr_auc": 0.5991384143123242,
+          "confusion_matrix": [
+            [
+              71,
+              22
+            ],
+            [
+              21,
+              36
+            ]
+          ],
+          "repo": "numpy/numpy"
+        },
+        "pallets/flask": {
+          "f1": 0.15789473684210525,
+          "precision": 0.14285714285714285,
+          "recall": 0.17647058823529413,
+          "accuracy": 0.782312925170068,
+          "roc_auc": 0.614027149321267,
+          "pr_auc": 0.150071870909612,
+          "confusion_matrix": [
+            [
+              112,
+              18
+            ],
+            [
+              14,
+              3
+            ]
+          ],
+          "repo": "pallets/flask"
+        }
+      },
+      "mean_f1": 0.4211361362865521,
+      "mean_roc_auc": 0.6571867137366423,
+      "mean_pr_auc": 0.4161162006965114,
+      "mean_precision": 0.41521862637096163,
+      "mean_recall": 0.4541056853363355,
+      "mean_accuracy": 0.6714115646258503
+    }
+  }
+}

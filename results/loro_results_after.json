@@ -1,0 +1,90 @@
+[
+  {
+    "f1": 0.42857142857142855,
+    "precision": 0.46875,
+    "recall": 0.39473684210526316,
+    "accuracy": 0.6,
+    "roc_auc": 0.6646859083191852,
+    "pr_auc": 0.5495989784942689,
+    "confusion_matrix": [
+      [
+        45,
+        17
+      ],
+      [
+        23,
+        15
+      ]
+    ],
+    "repo": "django/django",
+    "n_train": 447,
+    "n_test": 100,
+    "test_positive_rate": 0.38
+  },
+  {
+    "f1": 0.46774193548387094,
+    "precision": 0.3625,
+    "recall": 0.6590909090909091,
+    "accuracy": 0.56,
+    "roc_auc": 0.5370926243567752,
+    "pr_auc": 0.31176894686230805,
+    "confusion_matrix": [
+      [
+        55,
+        51
+      ],
+      [
+        15,
+        29
+      ]
+    ],
+    "repo": "kubernetes/kubernetes",
+    "n_train": 397,
+    "n_test": 150,
+    "test_positive_rate": 0.29333333333333333
+  },
+  {
+    "f1": 0.6178861788617886,
+    "precision": 0.5757575757575758,
+    "recall": 0.6666666666666666,
+    "accuracy": 0.6866666666666666,
+    "roc_auc": 0.6904357668364459,
+    "pr_auc": 0.5251244550754579,
+    "confusion_matrix": [
+      [
+        65,
+        28
+      ],
+      [
+        19,
+        38
+      ]
+    ],
+    "repo": "numpy/numpy",
+    "n_train": 397,
+    "n_test": 150,
+    "test_positive_rate": 0.38
+  },
+  {
+    "f1": 0.09523809523809523,
+    "precision": 0.08,
+    "recall": 0.11764705882352941,
+    "accuracy": 0.7414965986394558,
+    "roc_auc": 0.528054298642534,
+    "pr_auc": 0.1814723926131468,
+    "confusion_matrix": [
+      [
+        107,
+        23
+      ],
+      [
+        15,
+        2
+      ]
+    ],
+    "repo": "pallets/flask",
+    "n_train": 400,
+    "n_test": 147,
+    "test_positive_rate": 0.11564625850340136
+  }
+]
